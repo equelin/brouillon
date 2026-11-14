@@ -9,7 +9,13 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { type Component, type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  type Component,
+  stripTerminalSequences,
+  type TUI,
+  type TuiMouseEvent,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import type { CoachModels } from "../src/agent/models.ts";
 import { parseMeta } from "../src/frontmatter.ts";
 import { App } from "../src/ui/app.ts";
@@ -32,7 +38,7 @@ async function setup() {
   const faux = fauxProvider();
   const models = createModels();
   models.setProvider(faux.provider);
-  const screen: { overlay?: Component; quit: boolean } = { quit: false };
+  const screen: { overlay?: Component; quit: boolean; copied?: string } = { quit: false };
   const tui = {
     terminal: { rows: ROWS, columns: 150 },
     requestRender: () => undefined,
@@ -54,6 +60,9 @@ async function setup() {
     onQuit: () => {
       screen.quit = true;
     },
+    copy: (text) => {
+      screen.copied = text;
+    },
   });
   app.focused = true;
 
@@ -66,12 +75,21 @@ async function setup() {
     for (const char of text) app.handleInput(char);
   };
   const text = (width = 150) => app.render(width).join("\n");
+  const plain = () => stripTerminalSequences(text());
+  const mouse = (type: TuiMouseEvent["type"], x: number, y: number) =>
+    app.handleMouse({ type, button: "left", x, y } as TuiMouseEvent);
+  /** Screen row and column of a piece of text in the current frame. */
+  const locate = (needle: string) => {
+    const rows = app.render(150).map(stripTerminalSequences);
+    const y = rows.findIndex((row) => row.includes(needle));
+    return { x: rows[y]?.indexOf(needle) ?? -1, y };
+  };
 
   const started = app.start();
   await answer(KEY.down, KEY.enter);
   await started;
   await until(() => text().includes("First steps"), "the article to open");
-  return { app, faux, config, repo, origin, screen, answer, type, text };
+  return { app, faux, config, repo, origin, screen, answer, type, text, plain, mouse, locate };
 }
 
 test("every frame fills the terminal exactly, in wide and narrow layouts", async () => {
@@ -203,4 +221,82 @@ test("a translation request the coach cannot take leaves no permission to write 
   app.handleInput(KEY.enter);
   await until(() => text().includes("Could not translate."), "the second reply");
   assert.ok(!existsSync(join(config.repoPath, "content/articles/first-steps.en.md")));
+});
+
+test("a drag selects and copies text of the pane it started in only", async () => {
+  const { app, faux, screen, type, text, mouse, locate } = await setup();
+  faux.setResponses([fauxAssistantMessage([fauxText("Coach words.")])]);
+  app.handleInput(KEY.tab);
+  type("hello");
+  app.handleInput(KEY.enter);
+  await until(() => text().includes("Coach words."), "the coach's reply");
+
+  const article = locate("One sentence here.");
+  mouse("press", article.x, article.y);
+  mouse("drag", article.x + 2, article.y);
+  mouse("release", article.x + 2, article.y);
+  assert.equal(screen.copied, "One");
+
+  const reply = locate("Coach words.");
+  mouse("press", article.x, reply.y);
+  mouse("drag", 149, reply.y);
+  mouse("release", 149, reply.y);
+  assert.ok(!screen.copied?.includes("Coach words."));
+
+  mouse("press", reply.x + 11, reply.y);
+  mouse("drag", 0, reply.y);
+  mouse("release", 0, reply.y);
+  assert.equal(screen.copied, "Coach words.");
+  for (const line of app.render(150)) assert.equal(visibleWidth(line), 150);
+});
+
+test("a selection in the editor copies the article's text, not its wrapped rows", async () => {
+  const { app, screen, type, mouse, locate } = await setup();
+  app.handleInput("\x1b[1;5F");
+  type(`${"word ".repeat(40)}end`);
+  const first = locate("word word");
+  mouse("press", first.x, first.y);
+  mouse("drag", first.x + 3, first.y + 1);
+  mouse("release", first.x + 3, first.y + 1);
+  assert.match(screen.copied ?? "", /^(word )+word$/);
+});
+
+test("the prompt takes several lines and recalls earlier messages", async () => {
+  const { app, faux, type, text, plain } = await setup();
+  faux.setResponses([fauxAssistantMessage([fauxText("Noted.")])]);
+  app.handleInput(KEY.tab);
+  type("first line");
+  app.handleInput("\x1b\r");
+  type("second line\\");
+  app.handleInput(KEY.enter);
+  type("third line");
+  assert.ok(!text().includes("thinking"));
+  app.handleInput(KEY.enter);
+  await until(() => text().includes("Noted."), "the coach's reply");
+  const sent = app.render(150).map(stripTerminalSequences);
+  for (const line of ["▌ first line", "▌ second line", "▌ third line"]) {
+    assert.ok(sent.some((row) => row.includes(line)));
+  }
+
+  type("draft");
+  app.handleInput("\x1b[A");
+  assert.ok(plain().includes("› first line"));
+  app.handleInput("\x1b[B");
+  app.handleInput("\x1b[B");
+  app.handleInput("\x1b[B");
+  assert.ok(plain().includes("› draft"));
+});
+
+test("a message sent while the coach answers stays in the prompt", async () => {
+  const { app, faux, type, text, plain } = await setup();
+  faux.setResponses([fauxAssistantMessage([fauxText("Slow answer.")])]);
+  app.handleInput(KEY.tab);
+  type("first question");
+  app.handleInput(KEY.enter);
+  type("too early");
+  app.handleInput(KEY.enter);
+  assert.ok(plain().includes("› too early"));
+  await until(() => text().includes("Slow answer."), "the reply");
+  app.handleInput(KEY.enter);
+  await until(() => !plain().includes("› too early"), "the kept message to go");
 });

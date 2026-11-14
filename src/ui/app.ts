@@ -39,6 +39,14 @@ import {
 } from "../posts.ts";
 import { CoachPane, type Suggestion } from "./coach-pane.ts";
 import { Dialogs } from "./dialogs.ts";
+import { PromptHistory } from "./prompt-history.ts";
+import {
+  type Cell,
+  type CellRange,
+  highlightRange,
+  rangeBetween,
+  textInRange,
+} from "./selection.ts";
 import { accent, fit, style } from "./theme.ts";
 
 interface Comment {
@@ -52,6 +60,8 @@ interface Rect {
   width: number;
   height: number;
 }
+
+type PaneName = "editor" | "coach";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
@@ -73,6 +83,10 @@ export interface AppOptions {
   repo: Repo;
   models: CoachModels;
   onQuit: () => void;
+  /** Puts the text of a mouse selection on the system clipboard. */
+  copy: (text: string) => void;
+  /** File that keeps the messages sent to the coach across sessions. */
+  historyPath?: string;
 }
 
 /** The whole screen: article editor, coach conversation, and the commands that tie them to git. */
@@ -85,15 +99,16 @@ export class App implements Component, Focusable {
   private readonly repo: Repo;
   private readonly models: CoachModels;
   private readonly onQuit: () => void;
+  private readonly copy: (text: string) => void;
   private readonly dialogs: Dialogs;
   private readonly buffer = new TextBuffer();
   private readonly editor = new EditorView(this.buffer);
-  private readonly pane = new CoachPane();
+  private readonly pane: CoachPane;
 
   private coach: Coach | undefined;
   private post: Post | undefined;
   private stage: Stage = "draft";
-  private focus: "editor" | "coach" = "editor";
+  private focus: PaneName = "editor";
   private isFocused = false;
   private status: { text: string; error: boolean } = {
     text: "ctrl+p opens the menu",
@@ -115,8 +130,12 @@ export class App implements Component, Focusable {
   private pasteBuffer: string | undefined;
   private preview: ChildProcess | undefined;
   private stats = { version: -1, words: 0 };
-  private editorRect: Rect | undefined;
-  private coachRect: Rect | undefined;
+  /** Where each pane sits in the last frame, and the lines it showed. */
+  private panes: Partial<Record<PaneName, { rect: Rect; lines: string[] }>> = {};
+  /** A press that may become a selection, and the selection once the pointer has moved. */
+  private drag: { pane: PaneName; anchor: Cell } | undefined;
+  private selection: { pane: PaneName; range: CellRange; shown: string } | undefined;
+  private activityClock: NodeJS.Timeout | undefined;
 
   constructor(options: AppOptions) {
     this.tui = options.tui;
@@ -124,8 +143,14 @@ export class App implements Component, Focusable {
     this.repo = options.repo;
     this.models = options.models;
     this.onQuit = options.onQuit;
+    this.copy = options.copy;
     this.dialogs = new Dialogs(options.tui);
-    this.pane.onSubmit = (text) => void this.sendToCoach(text);
+    this.pane = new CoachPane(new PromptHistory(options.historyPath));
+    this.pane.onSubmit = (text) => {
+      if (!this.idleCoach()) return false;
+      void this.sendToCoach(text);
+      return true;
+    };
   }
 
   get focused(): boolean {
@@ -142,7 +167,7 @@ export class App implements Component, Focusable {
     this.pane.focused = this.isFocused && this.focus === "coach";
   }
 
-  private setFocus(focus: "editor" | "coach"): void {
+  private setFocus(focus: PaneName): void {
     this.focus = focus;
     this.applyFocus();
   }
@@ -258,18 +283,21 @@ export class App implements Component, Focusable {
       this.coach.subscribe((event) => {
         if (event.type === "start") {
           this.replyOpen = false;
-          this.pane.activity = "thinking";
+          this.pane.setActivity("thinking");
+          this.activityClock ??= setInterval(() => this.tui.requestRender(), 1000).unref();
         } else if (event.type === "reply") {
           if (!this.replyOpen) this.pane.beginReply();
           this.replyOpen = true;
           this.pane.updateReply(event.text);
         } else if (event.type === "tool") {
           this.replyOpen = false;
-          this.pane.activity = event.label.toLowerCase();
+          this.pane.setActivity(event.label.toLowerCase());
         } else if (event.type === "error") {
           this.pane.add("error", event.message);
         } else {
-          this.pane.activity = undefined;
+          this.pane.setActivity(undefined);
+          clearInterval(this.activityClock);
+          this.activityClock = undefined;
           this.pendingTranslation = undefined;
         }
         this.tui.requestRender();
@@ -303,6 +331,13 @@ export class App implements Component, Focusable {
     this.pane.add("author", text);
     this.tui.requestRender();
     await coach.send(`${context}\n\n${text}`);
+  }
+
+  private async newConversation(): Promise<void> {
+    await this.coach?.reset();
+    this.suggestions = [];
+    this.pane.clear();
+    this.say("The coach starts from a blank conversation");
   }
 
   private setStage(stage: Stage): void {
@@ -740,6 +775,7 @@ export class App implements Component, Focusable {
         label: this.preview ? "Stop the preview" : "Preview with hugo",
         run: () => this.togglePreview(),
       },
+      { label: "Start a new conversation", run: () => this.newConversation() },
       { label: "Sign in to the coach", run: () => this.signIn() },
       { label: "Quit", key: "ctrl+q", run: () => this.quit() },
     ];
@@ -757,10 +793,6 @@ export class App implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (this.focus !== "editor") {
-      this.handleKey(data);
-      return;
-    }
     let rest = data;
     if (this.pasteBuffer === undefined) {
       const start = rest.indexOf(PASTE_START);
@@ -778,7 +810,9 @@ export class App implements Component, Focusable {
     const content = this.pasteBuffer.slice(0, end);
     const remaining = this.pasteBuffer.slice(end + PASTE_END.length);
     this.pasteBuffer = undefined;
-    if (this.post) {
+    if (this.focus === "coach") {
+      this.pane.paste(content);
+    } else if (this.post) {
       this.editor.paste(content);
       this.touched();
     }
@@ -819,27 +853,86 @@ export class App implements Component, Focusable {
     this.tui.requestRender();
   }
 
+  private paneAt(x: number, y: number): PaneName | undefined {
+    for (const pane of ["editor", "coach"] as const) {
+      const rect = this.panes[pane]?.rect;
+      if (!rect) continue;
+      const inside =
+        x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
+      if (inside) return pane;
+    }
+    return undefined;
+  }
+
+  /** The cell of a pane nearest to a point of the screen. */
+  private cellIn(pane: PaneName, x: number, y: number): Cell | undefined {
+    const rect = this.panes[pane]?.rect;
+    if (!rect) return undefined;
+    return {
+      x: Math.max(0, Math.min(rect.width - 1, x - rect.x)),
+      y: Math.max(0, Math.min(rect.height - 1, y - rect.y)),
+    };
+  }
+
+  private selectedText(): string {
+    const { selection } = this;
+    if (!selection) return "";
+    // The editor gives the article's own text; rendered rows would add a break at every wrap.
+    if (selection.pane === "editor" && this.post) return this.editor.textInRange(selection.range);
+    return selection.shown;
+  }
+
+  /**
+   * Selections are drawn here, not by the terminal or pi-tui, which both select whole screen
+   * rows and so take the two panes at once.
+   */
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    const inside = (rect: Rect | undefined): rect is Rect =>
-      rect !== undefined &&
-      event.x >= rect.x &&
-      event.x < rect.x + rect.width &&
-      event.y >= rect.y &&
-      event.y < rect.y + rect.height;
-    const overEditor = inside(this.editorRect);
-    if (!overEditor && !inside(this.coachRect)) return undefined;
     if (event.type === "wheel") {
+      const over = this.paneAt(event.x, event.y);
+      if (!over) return undefined;
       const delta = Math.sign(event.wheelDelta ?? 0) * 3;
-      if (overEditor) this.editor.scrollBy(delta);
+      if (over === "editor") this.editor.scrollBy(delta);
       else this.pane.scrollBy(-delta);
       return { handled: true };
     }
-    if (event.type !== "click" || event.button !== "left") return undefined;
-    this.setFocus(overEditor ? "editor" : "coach");
-    if (overEditor && this.editorRect) {
-      this.editor.clickAt(event.x - this.editorRect.x, event.y - this.editorRect.y);
+    if (event.button !== "left") return undefined;
+
+    if (event.type === "press") {
+      const pane = this.paneAt(event.x, event.y);
+      const anchor = pane && this.cellIn(pane, event.x, event.y);
+      this.selection = undefined;
+      this.drag = pane && anchor ? { pane, anchor } : undefined;
+      return this.drag ? { capture: true } : undefined;
     }
-    return { handled: true };
+    if (event.type === "click") {
+      const pane = this.paneAt(event.x, event.y);
+      const cell = pane && this.cellIn(pane, event.x, event.y);
+      if (!pane || !cell) return undefined;
+      this.setFocus(pane);
+      if (pane === "editor") this.editor.clickAt(cell.x, cell.y);
+      else this.pane.clickAt(cell.x, cell.y);
+      return { handled: true };
+    }
+    if (!this.drag) return undefined;
+    const { pane, anchor } = this.drag;
+    if (event.type === "drag") {
+      const cell = this.cellIn(pane, event.x, event.y);
+      const shown = this.panes[pane];
+      if (cell && shown) {
+        const range = rangeBetween(anchor, cell);
+        this.selection = { pane, range, shown: textInRange(shown.lines, range, shown.rect.width) };
+      }
+    } else if (event.type === "release") {
+      this.drag = undefined;
+      const text = this.selectedText();
+      if (text) {
+        this.copy(text);
+        this.say(`Copied ${text.length} characters`);
+      } else {
+        this.selection = undefined;
+      }
+    }
+    return { handled: true, render: true };
   }
 
   private header(width: number): string {
@@ -895,28 +988,49 @@ export class App implements Component, Focusable {
     ];
   }
 
+  /** Record a pane's frame and place, and draw the selection that belongs to it. */
+  private framed(pane: PaneName, lines: string[], rect: Rect): string[] {
+    this.panes[pane] = { rect, lines };
+    const { selection } = this;
+    if (selection?.pane !== pane) return lines;
+    // A selection follows cells, not text: once the text under it moves, it marks something else.
+    if (textInRange(lines, selection.range, rect.width) !== selection.shown) {
+      this.selection = undefined;
+      return lines;
+    }
+    return highlightRange(lines, selection.range, rect.width);
+  }
+
   render(width: number): string[] {
     const height = Math.max(4, this.tui.terminal.rows);
     const bodyHeight = height - 2;
+    this.panes = {};
     let body: string[];
     if (width >= WIDE_LAYOUT) {
       const coachWidth = Math.max(36, Math.floor(width * 0.36));
       const editorWidth = width - coachWidth - 3;
-      const left = this.renderEditor(editorWidth, bodyHeight);
-      const right = this.pane.render(coachWidth, bodyHeight);
+      const left = this.framed("editor", this.renderEditor(editorWidth, bodyHeight), {
+        x: 0,
+        y: 1,
+        width: editorWidth,
+        height: bodyHeight,
+      });
+      const right = this.framed("coach", this.pane.render(coachWidth, bodyHeight), {
+        x: editorWidth + 3,
+        y: 1,
+        width: coachWidth,
+        height: bodyHeight,
+      });
       const bar = this.focus === "coach" ? style.cyan("│") : style.dim("│");
       body = left.map((line, row) => `${line} ${bar} ${right[row] ?? ""}`);
-      this.editorRect = { x: 0, y: 1, width: editorWidth, height: bodyHeight };
-      this.coachRect = { x: editorWidth + 3, y: 1, width: coachWidth, height: bodyHeight };
-    } else if (this.focus === "coach") {
-      body = this.pane.render(width, bodyHeight);
-      this.editorRect = undefined;
-      this.coachRect = { x: 0, y: 1, width, height: bodyHeight };
     } else {
-      body = this.renderEditor(width, bodyHeight);
-      this.editorRect = { x: 0, y: 1, width, height: bodyHeight };
-      this.coachRect = undefined;
+      const lines =
+        this.focus === "coach"
+          ? this.pane.render(width, bodyHeight)
+          : this.renderEditor(width, bodyHeight);
+      body = this.framed(this.focus, lines, { x: 0, y: 1, width, height: bodyHeight });
     }
+    if (this.selection && !this.panes[this.selection.pane]) this.selection = undefined;
     return [this.header(width), ...body, this.footer(width)];
   }
 }

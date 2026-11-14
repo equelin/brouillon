@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { createCoachModels, loginOnTerminal } from "./agent/models.ts";
-import { authPath, configPath, loadConfig } from "./config.ts";
+import { authPath, configPath, dataDir, loadConfig } from "./config.ts";
 import { FileCredentialStore } from "./credentials.ts";
 import { Repo } from "./git.ts";
 import { App } from "./ui/app.ts";
@@ -52,7 +52,16 @@ async function main(): Promise<void> {
     tui.stop({ preserveScreen: true });
     process.exit(code);
   };
-  const app = new App({ tui, config, repo, models, onQuit: () => leave(0) });
+  const app = new App({
+    tui,
+    config,
+    repo,
+    models,
+    onQuit: () => leave(0),
+    // OSC 52: the terminal sets the clipboard itself, which also works over ssh.
+    copy: (text) => tui.terminal.write(`\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`),
+    historyPath: join(dataDir(), "prompt-history.json"),
+  });
   process.on("uncaughtException", (error) => {
     tui.stop({ preserveScreen: true });
     console.error(error);

@@ -6,8 +6,9 @@ import {
   renderFakeCursor,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import type { CellRange } from "../ui/selection.ts";
 import { style } from "../ui/theme.ts";
-import type { TextBuffer } from "./buffer.ts";
+import type { Position, TextBuffer } from "./buffer.ts";
 
 interface Row {
   line: number;
@@ -98,6 +99,13 @@ const paint: Record<LineKind, (text: string) => string> = {
   text: (text) => text,
 };
 
+export interface EditorViewOptions {
+  /** Show the text as typed, without the article's markdown and front matter colors. */
+  plain?: boolean;
+  /** Two cells drawn in the gutter of the first row, such as a prompt sign. */
+  marker?: string;
+}
+
 /** Soft-wrapped, scrolling view of a TextBuffer with its key bindings. */
 export class EditorView {
   focused = false;
@@ -105,20 +113,24 @@ export class EditorView {
   markedLines: ReadonlySet<number> = new Set();
 
   private readonly buffer: TextBuffer;
+  private readonly options: EditorViewOptions;
   private rows: Row[] = [];
   private kinds: LineKind[] = [];
   private layoutKey = "";
   private top = 0;
   private height = 1;
+  private width = 1;
   private textWidth = 1;
   /** Column the cursor aims for while moving vertically across shorter rows. */
   private preferredCells: number | undefined;
 
-  constructor(buffer: TextBuffer) {
+  constructor(buffer: TextBuffer, options: EditorViewOptions = {}) {
     this.buffer = buffer;
+    this.options = options;
   }
 
   private layout(width: number): void {
+    this.width = width;
     // One cell stays free so the cursor can sit after the last character of a full row.
     this.textWidth = Math.max(8, Math.min(width - GUTTER, MAX_TEXT_WIDTH) - 1);
     const key = `${this.buffer.version}:${this.textWidth}`;
@@ -128,7 +140,20 @@ export class EditorView {
     this.buffer.getLines().forEach((text, line) => {
       for (const row of wrapLine(text, this.textWidth)) this.rows.push({ line, ...row });
     });
-    this.kinds = classify(this.buffer.getLines());
+    this.kinds = this.options.plain ? [] : classify(this.buffer.getLines());
+  }
+
+  /** Rows the text takes once wrapped to `width`. */
+  rowCount(width: number): number {
+    this.layout(width);
+    return this.rows.length;
+  }
+
+  /** Where the cursor sits among the wrapped rows, so a caller can give the arrows another use. */
+  cursorEdges(): { first: boolean; last: boolean } {
+    this.layout(this.width);
+    const row = this.cursorRow();
+    return { first: row === 0, last: row >= this.rows.length - 1 };
   }
 
   private cursorRow(): number {
@@ -146,7 +171,7 @@ export class EditorView {
     return visibleWidth(displayable(this.buffer.line(row.line).slice(row.start, col)));
   }
 
-  private colAtCells(row: Row, cells: number): number {
+  private colAtCells(row: Row, cells: number, stayOnRow = true): number {
     const text = this.buffer.line(row.line).slice(row.start, row.end);
     let used = 0;
     for (const { index, segment } of graphemes.segment(text)) {
@@ -156,7 +181,7 @@ export class EditorView {
     }
     const isLastRowOfLine = row.end === this.buffer.line(row.line).length;
     // The end of a wrapped row is the start of the next one; stay on this row.
-    return isLastRowOfLine ? row.end : Math.max(row.start, row.end - 1);
+    return isLastRowOfLine || !stayOnRow ? row.end : Math.max(row.start, row.end - 1);
   }
 
   private moveRows(delta: number): void {
@@ -170,12 +195,29 @@ export class EditorView {
     this.preferredCells = cells;
   }
 
+  private positionAt(x: number, y: number, stayOnRow = true): Position | undefined {
+    const row = this.rows[Math.min(this.rows.length - 1, this.top + Math.max(0, y))];
+    if (!row) return undefined;
+    return { line: row.line, col: this.colAtCells(row, Math.max(0, x - GUTTER), stayOnRow) };
+  }
+
   /** Place the cursor at a cell of the last rendered frame. */
   clickAt(x: number, y: number): void {
-    const row = this.rows[Math.min(this.rows.length - 1, this.top + Math.max(0, y))];
-    if (!row) return;
-    this.buffer.moveTo({ line: row.line, col: this.colAtCells(row, Math.max(0, x - GUTTER)) });
+    const position = this.positionAt(x, y);
+    if (!position) return;
+    this.buffer.moveTo(position);
     this.preferredCells = undefined;
+  }
+
+  /** Text under a range of cells of the last rendered frame, without the breaks of soft wrapping. */
+  textInRange(range: CellRange): string {
+    const from = this.positionAt(range.start.x, range.start.y);
+    const to = this.positionAt(range.end.x, range.end.y, false);
+    if (!from || !to) return "";
+    const lines = this.buffer.getLines().slice(from.line, to.line + 1);
+    lines[lines.length - 1] = (lines.at(-1) ?? "").slice(0, to.col);
+    lines[0] = (lines[0] ?? "").slice(from.col);
+    return lines.join("\n");
   }
 
   scrollBy(rows: number): void {
@@ -268,6 +310,7 @@ export class EditorView {
       const color = paint[this.kinds[row.line] ?? "text"];
       const marked = row.start === 0 && this.markedLines.has(row.line);
       let line = marked ? `${style.yellow("●")} ` : "  ";
+      if (i === 0 && this.options.marker) line = this.options.marker;
       let cells = GUTTER;
       if (i === cursorRow) {
         const before = displayable(text.slice(row.start, cursor.col));

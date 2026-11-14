@@ -15,7 +15,9 @@ machine as a single Node process; TypeScript is run directly by Node, with no bu
 ## Layout
 
 - `src/main.ts`: entry point and command line.
-- `src/ui/`: `app.ts` is the whole screen and every command; `coach-pane.ts`, `dialogs.ts`.
+- `src/ui/`: `app.ts` is the whole screen and every command; `coach-pane.ts` (conversation
+  and prompt), `selection.ts` (mouse selection inside one pane), `prompt-history.ts`,
+  `dialogs.ts`.
 - `src/editor/`: `buffer.ts` (text, cursor, undo; no terminal code) and `view.ts` (wrapping,
   rendering, keys).
 - `src/agent/`: `tools.ts` (everything the coach may do), `prompt.ts`, `coach.ts`, `models.ts`.
@@ -47,6 +49,10 @@ machine as a single Node process; TypeScript is run directly by Node, with no bu
 - `pi-tui` components only receive a width. `App.render` returns exactly `terminal.rows`
   lines and lays out the panes itself; its `capturesViewportInput` keeps page keys from
   scrolling the alternate screen.
+- `App.handleMouse` captures every left press on a pane and draws the selection itself:
+  left alone, `pi-tui` selects whole screen rows, across both panes.
+- `matchesKey("\n", "enter")` is true, so `ctrl+j` cannot mean "new line" in the prompt.
+- `sliceByColumn` keeps the styles opened before the cut and does not close them.
 - `displayable()` in `src/editor/view.ts` must keep one UTF-16 unit per unit of input, or
   cursor columns stop matching the text.
 - `Agent.reset()` throws while a run is active: `Coach.reset` aborts and waits first.

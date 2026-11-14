@@ -40,7 +40,25 @@ On first start brouillon clones the blog into `~/.local/share/brouillon/equelin.
 | `ctrl+q` | Quit |
 
 The article is written to disk two seconds after you stop typing. Mouse clicks place the
-cursor, the wheel scrolls, and dragging selects text for the clipboard.
+cursor and the wheel scrolls.
+
+Dragging selects text and copies it on release. A selection stays inside the pane where it
+started, and one made in the article copies the text as written, without the line breaks
+of the wrapping. The copy goes through the terminal (OSC 52): inside tmux it needs
+`set -g set-clipboard on`.
+
+### Talking to the coach
+
+| Key | Action |
+|---|---|
+| `enter` | Send the message |
+| `alt+enter`, `shift+enter`, or `\` then `enter` | New line in the message |
+| `up` / `down` | Recall earlier messages, from the first and last line of the prompt |
+| `pageup` / `pagedown`, `shift+up` / `shift+down` | Scroll the conversation |
+
+Messages are kept across sessions in `~/.local/share/brouillon/prompt-history.json`. A
+message sent while the coach is still answering stays in the prompt. "Start a new
+conversation" in the menu makes the coach forget the current one.
 
 ### What the coach can and cannot do
 
