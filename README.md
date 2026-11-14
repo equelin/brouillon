@@ -5,6 +5,8 @@ writing coach on the right, and git underneath. You write the article; the coach
 questions, points at weak passages and offers alternative wordings for a sentence you
 choose. Publishing is a push to the blog repository.
 
+![The writing desk: an article on the left, the coach's remarks and two alternative wordings on the right](docs/desk.png)
+
 It was written for [okcomputer.cloud](https://okcomputer.cloud) and works with any blog
 that fits [the layout below](#what-the-blog-must-look-like).
 
@@ -83,6 +85,8 @@ The editor and publishing work without it; the coach pane then says it is signed
 | `ctrl+z` / `ctrl+y` | Undo / redo |
 | `esc` | Stop the coach while it answers |
 | `ctrl+q` | Quit |
+
+![The menu, opened with ctrl+p, listing every command](docs/menu.png)
 
 The article is written to disk two seconds after you stop typing. Mouse clicks place the
 cursor and the wheel scrolls.

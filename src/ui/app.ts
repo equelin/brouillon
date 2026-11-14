@@ -26,7 +26,7 @@ import {
 import type { Workspace } from "../agent/tools.ts";
 import type { Config } from "../config.ts";
 import { TextBuffer } from "../editor/buffer.ts";
-import { EditorView } from "../editor/view.ts";
+import { EditorView, GUTTER } from "../editor/view.ts";
 import { countWords, type PostMeta, parseMeta, setFields, withBody } from "../frontmatter.ts";
 import {
   commitSubject,
@@ -1036,16 +1036,20 @@ export class App implements Component, Focusable {
       return lines;
     }
     this.refreshMarks();
+    // The panel shares the article's gutter, so a note reads as a margin note of the text.
+    const indent = " ".repeat(GUTTER);
     const notes = this.commentsAtCursor().flatMap((comment) =>
-      wrapTextWithAnsi(`${color.highlight("●")} ${comment.note}`, Math.max(10, width - 2)),
+      wrapTextWithAnsi(comment.note, Math.max(10, width - GUTTER)).map(
+        (line, index) => (index === 0 ? `${color.highlight("●")} ` : indent) + line,
+      ),
     );
     const panel =
       notes.length === 0
         ? []
         : [
-            color.subtle("─".repeat(width)),
+            indent + color.subtle("─".repeat(Math.max(0, width - GUTTER))),
             ...notes.slice(0, 5),
-            color.muted("ctrl+x dismisses the note · ctrl+n jumps to the next one"),
+            indent + color.muted("ctrl+x dismisses the note · ctrl+n jumps to the next one"),
           ];
     const editorHeight = Math.max(1, height - panel.length);
     return [

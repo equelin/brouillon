@@ -19,7 +19,8 @@ interface Row {
 type LineKind = "meta" | "code" | "heading" | "quote" | "text";
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-const GUTTER = 2;
+/** Cells before the text of each row; marks such as a note's bullet are drawn there. */
+export const GUTTER = 2;
 const MAX_TEXT_WIDTH = 96;
 const SCROLL_MARGIN = 2;
 const INDENT = 4;
