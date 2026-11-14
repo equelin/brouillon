@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import type { Api, AuthInteraction, CredentialStore, Model } from "@earendil-works/pi-ai";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { builtinModels, getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { type Config, deviceId } from "../config.ts";
 
 export type CoachModels = ReturnType<typeof builtinModels>;
@@ -21,7 +21,14 @@ export async function resolveModel(
   if (!models.getProvider(config.provider)) {
     throw new Error(`unknown provider "${config.provider}" in the configuration`);
   }
-  const available = await models.getAvailable(config.provider);
+  let available = await models.getAvailable(config.provider);
+  const auth = await models.checkAuth(config.provider);
+  if (config.provider === "openai" && auth?.type === "oauth") {
+    // A ChatGPT account only serves the models of the Codex catalog; OpenAI answers
+    // "model_not_found" for the others, which pi-ai still lists as available.
+    const served = new Set(getBuiltinModels("openai-codex").map((model) => model.id));
+    available = available.filter((model) => served.has(model.id));
+  }
   return available.find((model) => model.id === config.model) ?? available[0];
 }
 

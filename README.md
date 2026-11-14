@@ -84,7 +84,7 @@ case where the coach produces full text. Open the translation from the menu to r
 | `articlesDir` | `content/articles` | Where `<slug>.<lang>.md` files live |
 | `languages` | `["fr", "en"]` | First one is offered first for new articles |
 | `provider` | `openai` | Any provider id `pi-ai` knows |
-| `model` | `gpt-5.5` | Falls back to the provider's first available model |
+| `model` | `gpt-6.1-sol` | Falls back to the provider's first usable model. A ChatGPT account only serves the `gpt-5.6-*`, `gpt-6-*` and `gpt-6.1-*` models |
 | `thinkingLevel` | `low` | `off`, `minimal`, `low`, `medium` or `high` |
 | `editor` | `$VISUAL`, `$EDITOR`, `vi` | Command for `ctrl+o` |
 | `previewArgs` | `["server", "--buildDrafts"]` | Arguments for `hugo` |

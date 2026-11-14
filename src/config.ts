@@ -68,7 +68,7 @@ export function defaultConfig(): Config {
     articlesDir: "content/articles",
     languages: ["fr", "en"],
     provider: "openai",
-    model: "gpt-5.5",
+    model: "gpt-6.1-sol",
     thinkingLevel: "low",
     previewArgs: ["server", "--buildDrafts"],
   };
