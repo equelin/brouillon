@@ -1,11 +1,21 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { createCoachModels, loginOnTerminal } from "./agent/models.ts";
-import { authPath, configPath, dataDir, loadConfig } from "./config.ts";
+import {
+  authPath,
+  type Config,
+  configPath,
+  DEFAULT_PROVIDER,
+  dataDir,
+  loadConfig,
+  saveBlogSettings,
+} from "./config.ts";
 import { FileCredentialStore } from "./credentials.ts";
-import { Repo } from "./git.ts";
+import { Repo, remoteDefaultBranch } from "./git.ts";
+import { askBlogSettings } from "./setup.ts";
 import { App } from "./ui/app.ts";
 import { chooseTheme, setTheme } from "./ui/theme.ts";
 
@@ -13,10 +23,31 @@ const USAGE = `brouillon: write and publish articles with a writing coach
 
 Usage:
   brouillon          open the writing desk
+  brouillon setup    choose the blog to write for, or change its settings
   brouillon login    sign in to the coach's model provider
   brouillon --help   show this help
 
 Configuration: ${configPath()}`;
+
+/** Ask for the blog on the terminal, save the answers and return the configuration they give. */
+async function setUpBlog(current: Config | undefined): Promise<Config> {
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      `the questions about your blog need a terminal: run brouillon in one, or write ${configPath()}`,
+    );
+  }
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const terminal = { ask: (question: string) => readline.question(question), say: console.log };
+    await saveBlogSettings(await askBlogSettings(terminal, remoteDefaultBranch, current));
+  } finally {
+    readline.close();
+  }
+  const config = await loadConfig();
+  if (!config) throw new Error(`${configPath()} could not be read back`);
+  console.log(`\nSaved to ${configPath()}.`);
+  return config;
+}
 
 async function main(): Promise<void> {
   const [command] = process.argv.slice(2);
@@ -24,19 +55,21 @@ async function main(): Promise<void> {
     console.log(USAGE);
     return;
   }
-  if (command !== undefined && command !== "login") {
+  if (command !== undefined && command !== "login" && command !== "setup") {
     console.error(`unknown command "${command}"\n\n${USAGE}`);
     process.exitCode = 2;
     return;
   }
 
-  const config = await loadConfig();
+  const saved = await loadConfig();
   const models = createCoachModels(new FileCredentialStore(authPath()));
   if (command === "login") {
-    await loginOnTerminal(models, config.provider);
+    await loginOnTerminal(models, saved?.provider ?? DEFAULT_PROVIDER);
     console.log("Signed in.");
     return;
   }
+  const config = saved && command !== "setup" ? saved : await setUpBlog(saved);
+  if (command === "setup") return;
 
   if (!existsSync(config.repoPath)) {
     console.log(`Cloning ${config.repoUrl} into ${config.repoPath}…`);

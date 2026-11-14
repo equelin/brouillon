@@ -1,9 +1,12 @@
 # brouillon
 
-A terminal writing desk for [okcomputer.cloud](https://okcomputer.cloud): a markdown editor
-on the left, a writing coach on the right, and git underneath. You write the article; the
-coach asks questions, points at weak passages and offers alternative wordings for a sentence
-you choose. Publishing is a push to the blog repository.
+A terminal writing desk for a Hugo blog kept in git: a markdown editor on the left, a
+writing coach on the right, and git underneath. You write the article; the coach asks
+questions, points at weak passages and offers alternative wordings for a sentence you
+choose. Publishing is a push to the blog repository.
+
+It was written for [okcomputer.cloud](https://okcomputer.cloud) and works with any blog
+that fits [the layout below](#what-the-blog-must-look-like).
 
 Built on the [Pi](https://github.com/earendil-works/pi) libraries: `pi-tui` for the
 interface, `pi-agent-core` for the coach, `pi-ai` for the model, including sign-in with a
@@ -11,17 +14,58 @@ ChatGPT subscription.
 
 ## Install
 
-Requires [mise](https://mise.jdx.dev), git with push access to the blog repository, and
-optionally [Hugo](https://gohugo.io) for the local preview.
+You need:
+
+- [mise](https://mise.jdx.dev), which installs the right Node version;
+- git, with push access to your blog's repository that works without a prompt (an SSH key
+  in an agent, or a credential helper);
+- optionally [Hugo](https://gohugo.io), for the local preview.
 
 ```sh
+git clone https://github.com/equelin/brouillon.git
+cd brouillon
 make setup      # tools and dependencies
 make install    # launcher in ~/.local/bin/brouillon
-brouillon login   # sign in with ChatGPT; paste the redirect URL when on a remote machine
+```
+
+### First start
+
+```sh
 brouillon
 ```
 
-On first start brouillon clones the blog into `~/.local/share/brouillon/equelin.github.io`.
+The first start asks which blog you write for, then opens the writing desk:
+
+| Question | Suggested answer |
+|---|---|
+| Git URL of the blog repository | none: this one is required |
+| Branch whose pushes publish the site | the repository's default branch |
+| Directory of the articles | `content/posts` |
+| Languages of the site, the default one first | `en` |
+| Name of the blog | the repository's name |
+| What the blog is about, in a few words | none: the coach uses it to judge what readers know |
+
+The answers go to `~/.config/brouillon/config.json`, and the blog is cloned into
+`~/.local/share/brouillon/<repository name>`. `brouillon setup` asks again, with your
+current answers suggested.
+
+### The coach
+
+```sh
+brouillon login   # sign in with ChatGPT; paste the redirect URL when on a remote machine
+```
+
+The editor and publishing work without it; the coach pane then says it is signed out.
+
+### What the blog must look like
+
+- Articles are markdown files named `<slug>.<lang>.md` in one directory, such as
+  `content/posts/my-article.en.md`: Hugo's
+  [translation by file name](https://gohugo.io/content-management/multilingual/#translation-by-file-name).
+  A blog in one language uses the same naming.
+- Front matter is YAML or JSON, with `title`, `date` and `draft`.
+- A push to the publish branch deploys the site (GitHub Pages, Netlify or similar).
+  brouillon only pushes; it does not build the site.
 
 ## Writing
 
@@ -86,22 +130,25 @@ case where the coach produces full text. Open the translation from the menu to r
 - Every save rewrites that branch's single commit, `Add article <title>` or
   `Update article <title>`, and pushes it with `--force-with-lease`.
 - *Publish* sets `draft: false` on every language version, dates a first publication
-  today, rebases the commit on `origin/master`, fast-forwards `master`, pushes it and
-  deletes the draft branch. The push triggers the site's GitHub Pages workflow.
+  today, rebases the commit on the publish branch, fast-forwards that branch, pushes it and
+  deletes the draft branch. The push is what deploys the site.
 - Commits use the repository's own signing configuration. When the OpenPGP key is locked,
   brouillon says so before committing and offers to unlock it on the terminal.
 
 ## Configuration
 
-`~/.config/brouillon/config.json`, every key optional:
+`~/.config/brouillon/config.json`. The first start writes the first six keys; the others
+are optional:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `repoPath` | `~/.local/share/brouillon/equelin.github.io` | Local clone of the blog |
-| `repoUrl` | `git@github.com:equelin/equelin.github.io.git` | Cloned when `repoPath` is missing |
-| `publishBranch` | `master` | Branch whose pushes deploy the site |
-| `articlesDir` | `content/articles` | Where `<slug>.<lang>.md` files live |
-| `languages` | `["fr", "en"]` | First one is offered first for new articles |
+| `repoUrl` | asked | Repository of the blog, cloned when `repoPath` is missing |
+| `publishBranch` | asked | Branch whose pushes deploy the site |
+| `articlesDir` | asked | Where `<slug>.<lang>.md` files live |
+| `languages` | asked | First one is offered first for new articles; translation needs two |
+| `blogName` | asked | Name of the blog, told to the coach |
+| `blogDescription` | asked | What the blog is about, told to the coach |
+| `repoPath` | `~/.local/share/brouillon/<repository name>` | Local clone of the blog |
 | `provider` | `openai` | Any provider id `pi-ai` knows |
 | `model` | `gpt-6.1-sol` | Falls back to the provider's first usable model. A ChatGPT account only serves the `gpt-5.6-*`, `gpt-6-*` and `gpt-6.1-*` models |
 | `thinkingLevel` | `low` | `off`, `minimal`, `low`, `medium` or `high` |
@@ -127,6 +174,8 @@ Credentials are stored in `~/.config/brouillon/auth.json`, readable by you only.
 make check   # lint, type-check, tests
 make run     # start from this checkout
 ```
+
+`make check` also runs on every push and pull request, in GitHub Actions.
 
 ## Colors
 

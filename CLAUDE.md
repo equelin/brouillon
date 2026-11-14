@@ -1,6 +1,6 @@
 # brouillon
 
-Terminal writing desk for the okcomputer.cloud blog: a prose editor, a writing coach built
+Terminal writing desk for a Hugo blog kept in git: a prose editor, a writing coach built
 on the Pi libraries, and git publishing to the blog repository. It runs on the author's
 machine as a single Node process; TypeScript is run directly by Node, with no build step.
 
@@ -8,13 +8,15 @@ machine as a single Node process; TypeScript is run directly by Node, with no bu
 
 - `make setup`: trust and install tools, install dependencies.
 - `make check`: `make lint` (Biome, then `tsc`) followed by `make test` (`node --test`).
+  `.github/workflows/check.yml` runs it on every push and pull request.
 - `make fmt`: apply the formatter.
 - `make run`: start the app from this checkout. It needs a real terminal.
 - `make install`: write the `brouillon` launcher into `~/.local/bin`.
 
 ## Layout
 
-- `src/main.ts`: entry point and command line.
+- `src/main.ts`: entry point and command line. `src/setup.ts`: the questions of the first
+  start, which fill the blog's part of the configuration.
 - `src/ui/`: `app.ts` is the whole screen and every command; `coach-pane.ts` (conversation
   and prompt), `selection.ts` (mouse selection inside one pane), `prompt-history.ts`,
   `dialogs.ts`, `theme.ts` (palettes, pills, gradient, rounded frames).
@@ -74,5 +76,5 @@ machine as a single Node process; TypeScript is run directly by Node, with no bu
 
 - Pi packages: the READMEs under `node_modules/@earendil-works/*/README.md` and their
   `dist/*.d.ts` are the reference for the installed version (1.5.2).
-- Blog repository: https://github.com/equelin/equelin.github.io (Hugo, deploys on push to
-  `master`).
+- The blog it was written for: https://github.com/equelin/equelin.github.io (Hugo, articles
+  in `content/articles`, French and English, deploys on push to `master`).

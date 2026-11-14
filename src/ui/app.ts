@@ -294,7 +294,10 @@ export class App implements Component, Focusable {
         model,
         thinkingLevel: this.config.thinkingLevel,
         workspace: this.workspace,
-        systemPrompt: systemPrompt(this.guide()),
+        systemPrompt: systemPrompt(this.guide(), {
+          name: this.config.blogName,
+          description: this.config.blogDescription,
+        }),
       });
       this.coach.subscribe((event) => {
         if (event.type === "start") {
@@ -791,11 +794,15 @@ export class App implements Component, Focusable {
         run: () => this.sendToCoach("Review the paragraph under my cursor."),
       },
       { label: "Rephrase this sentence", key: "ctrl+t", run: () => this.rephraseSentence() },
-      {
-        label: `Translate into ${other}`,
-        guide: "Translate into the other language",
-        run: () => this.translate(),
-      },
+      ...(this.config.languages.length > 1
+        ? [
+            {
+              label: `Translate into ${other}`,
+              guide: "Translate into the other language",
+              run: () => this.translate(),
+            },
+          ]
+        : []),
       { label: "Publish to the live site", run: () => this.publish() },
       { label: "Edit in $EDITOR", key: "ctrl+o", run: () => this.openExternalEditor() },
       {

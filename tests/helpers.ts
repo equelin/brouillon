@@ -50,6 +50,14 @@ export function fixture(): { config: Config; repo: Repo; origin: string } {
   git(clone, "config", "user.name", "Test");
   git(clone, "config", "user.email", "test@example.org");
   git(clone, "config", "commit.gpgsign", "false");
-  const config = { ...defaultConfig(), repoPath: clone, repoUrl: origin };
+  const config: Config = {
+    ...defaultConfig(origin),
+    repoPath: clone,
+    publishBranch: "master",
+    articlesDir: "content/articles",
+    languages: ["fr", "en"],
+    blogName: "The test blog",
+    blogDescription: "testing things",
+  };
   return { config, repo: new Repo(clone, "master", ["content/articles", "static"]), origin };
 }

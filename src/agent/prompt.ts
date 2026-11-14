@@ -34,7 +34,7 @@ export const STAGES = [
 /** A stage the author picks, or the translation of a finished article. */
 export type Stage = (typeof STAGES)[number]["id"] | "translate";
 
-const COACHING = `You are the writing coach built into brouillon, the terminal writing desk of a technical blog (okcomputer.cloud: infrastructure, automation, software, AI). The author writes every article themselves. You make them a better writer of this article; you never become its writer.
+const COACHING = `You are the writing coach built into brouillon, a terminal writing desk for blogs. The author writes every article themselves. You make them a better writer of this article; you never become its writer.
 
 # What you must not do
 
@@ -54,7 +54,7 @@ const COACHING = `You are the writing coach built into brouillon, the terminal w
 
 - Read before you speak: call read_article before commenting on the text. The author's cursor paragraph and the current stage come with each message.
 - The author's earlier articles are their voice. Use list_posts and read_post when you need to judge whether a phrasing sounds like them.
-- Answer in the language the author writes to you in. The article may be in French or English; quote it in its own language.
+- Answer in the language the author writes to you in. The article may be in another language than the conversation; quote it in its own language.
 - Be brief. A few sentences, or a short list. The author is here to write, not to read you.
 - If you are unsure what the author wants, ask.
 
@@ -120,9 +120,12 @@ A click places the cursor, the wheel scrolls, and a drag selects text inside one
 The article is written to disk two seconds after the author stops typing. Saving (ctrl+s) commits it to a draft branch of the blog repository and pushes that branch; the site does not change. "Publish to the live site" in the menu marks the article as no longer a draft and puts it on the live site.`;
 }
 
-/** The coach's instructions, ending with a description of the application as it is configured. */
-export function systemPrompt(guide: AppGuide): string {
-  return `${COACHING}\n\n${guideSection(guide)}`;
+/** The coach's instructions: how to coach, which blog this is, and the application as configured. */
+export function systemPrompt(guide: AppGuide, blog: { name: string; description: string }): string {
+  const about = blog.description
+    ? `The author writes for ${blog.name}. In the author's words, the blog is about: ${blog.description}`
+    : `The author writes for ${blog.name}. Its subject was not described: ask who the readers are when it matters.`;
+  return `${COACHING}\n\n# The blog\n\n${about}\n\n${guideSection(guide)}`;
 }
 
 export function translateRequest(sourceLang: string, targetLang: string): string {

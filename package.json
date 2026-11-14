@@ -1,7 +1,7 @@
 {
   "name": "brouillon",
   "version": "0.1.0",
-  "description": "Terminal writing desk for okcomputer.cloud: a markdown editor with a writing coach, publishing through git",
+  "description": "Terminal writing desk for a Hugo blog: a markdown editor with a writing coach, publishing through git",
   "type": "module",
   "private": true,
   "license": "MIT",

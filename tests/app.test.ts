@@ -335,6 +335,8 @@ test("the coach is told the keys the application really binds", async () => {
     "- alt+1: Apply alternative 1 of the oldest pending suggestion",
     "- Publish to the live site",
     "- Translate into the other language",
+    "The author writes for The test blog.",
+    "the blog is about: testing things",
   ]) {
     assert.ok(instructions.includes(line), line);
   }

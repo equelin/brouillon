@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 /**
  * "dark" and "light" use Charm's charmtone palette in 24-bit color; "ansi" keeps to the
@@ -13,9 +13,8 @@ export type ThemeName = (typeof THEMES)[number];
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
 
-export interface Config {
-  /** Local clone of the blog repository. */
-  repoPath: string;
+/** What brouillon has to be told about a blog; the first start asks for it. */
+export interface BlogSettings {
   /** Remote the clone is created from when repoPath does not exist yet. */
   repoUrl: string;
   /** Branch whose pushes deploy the site. */
@@ -24,6 +23,14 @@ export interface Config {
   articlesDir: string;
   /** Languages of the site; the first one is the default for new articles. */
   languages: string[];
+  /** Name of the blog and what it is about, as the coach is told. */
+  blogName: string;
+  blogDescription: string;
+}
+
+export interface Config extends BlogSettings {
+  /** Local clone of the blog repository. */
+  repoPath: string;
   provider: string;
   /** Model id; when unavailable, the first available model of the provider is used. */
   model: string;
@@ -69,14 +76,40 @@ export function deviceId(): string {
   return id;
 }
 
-export function defaultConfig(): Config {
+/** Last part of a repository URL or path, without ".git": the name of its clone. */
+export function repoName(repoUrl: string): string {
+  return (
+    basename(
+      repoUrl
+        .replace(/[/:]+$/, "")
+        .replace(/\.git$/, "")
+        .replace(/:/g, "/"),
+    ) || "blog"
+  );
+}
+
+export const DEFAULT_PROVIDER = "openai";
+
+/** What the first start suggests for a blog, and what a configuration without the key gets. */
+export const BLOG_DEFAULTS = {
+  publishBranch: "main",
+  articlesDir: "content/posts",
+  languages: ["en"],
+};
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function defaultConfig(repoUrl: string): Config {
+  const name = repoName(repoUrl);
   return {
-    repoPath: join(dataDir(), "equelin.github.io"),
-    repoUrl: "git@github.com:equelin/equelin.github.io.git",
-    publishBranch: "master",
-    articlesDir: "content/articles",
-    languages: ["fr", "en"],
-    provider: "openai",
+    repoPath: join(dataDir(), name),
+    repoUrl,
+    ...BLOG_DEFAULTS,
+    blogName: name,
+    blogDescription: "",
+    provider: DEFAULT_PROVIDER,
     model: "gpt-6.1-sol",
     thinkingLevel: "low",
     theme: "auto",
@@ -84,13 +117,13 @@ export function defaultConfig(): Config {
   };
 }
 
-export async function loadConfig(path = configPath()): Promise<Config> {
-  await mkdir(configDir(), { recursive: true, mode: 0o700 });
+/** The configuration, or undefined when no blog has been set up yet. */
+export async function loadConfig(path = configPath()): Promise<Config | undefined> {
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultConfig();
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
   let parsed: unknown;
@@ -99,10 +132,13 @@ export async function loadConfig(path = configPath()): Promise<Config> {
   } catch (error) {
     throw new Error(`${path} is not valid JSON: ${(error as Error).message}`);
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${path} must contain a JSON object`);
+  if (!isJsonObject(parsed)) throw new Error(`${path} must contain a JSON object`);
+  const { repoUrl } = parsed as Partial<Config>;
+  if (repoUrl === undefined) return undefined;
+  if (typeof repoUrl !== "string" || repoUrl === "") {
+    throw new Error(`${path}: "repoUrl" must be the URL of the blog repository`);
   }
-  const config = { ...defaultConfig(), ...(parsed as Partial<Config>) };
+  const config = { ...defaultConfig(repoUrl), ...(parsed as Partial<Config>) };
   if (!Array.isArray(config.languages) || config.languages.length === 0) {
     throw new Error(`${path}: "languages" must list at least one language`);
   }
@@ -110,4 +146,19 @@ export async function loadConfig(path = configPath()): Promise<Config> {
     throw new Error(`${path}: "theme" must be auto, ${THEMES.join(", ")}`);
   }
   return config;
+}
+
+/** Write the blog's settings, keeping whatever else the file already sets. */
+export async function saveBlogSettings(settings: BlogSettings, path = configPath()): Promise<void> {
+  let existing: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+    if (isJsonObject(parsed)) existing = parsed;
+  } catch {
+    // No file yet, or one that cannot be read as JSON: the settings start a new one.
+  }
+  // A clone path set for another repository would keep brouillon working on the old blog.
+  if (existing.repoUrl !== settings.repoUrl) delete existing.repoPath;
+  await mkdir(configDir(), { recursive: true, mode: 0o700 });
+  await writeFile(path, `${JSON.stringify({ ...existing, ...settings }, null, 2)}\n`);
 }

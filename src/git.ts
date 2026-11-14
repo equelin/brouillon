@@ -80,6 +80,13 @@ function exec(
   });
 }
 
+/** The branch a remote repository checks out by default, or undefined when it cannot be asked. */
+export async function remoteDefaultBranch(url: string): Promise<string | undefined> {
+  const result = await exec("git", ["ls-remote", "--symref", url, "HEAD"], { env: gitEnv() });
+  if (result.code !== 0) return undefined;
+  return /^ref: refs\/heads\/(\S+)\s+HEAD$/m.exec(result.stdout)?.[1];
+}
+
 export class Repo {
   readonly path: string;
   readonly publishBranch: string;
