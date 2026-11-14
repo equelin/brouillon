@@ -1,4 +1,9 @@
-# brouillon
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <img src="docs/logo-light.svg" alt="brouillon" width="360">
+  </picture>
+</h1>
 
 A terminal writing desk for a Hugo blog kept in git: a markdown editor on the left, a
 writing coach on the right, and git underneath. You write the article; the coach asks
