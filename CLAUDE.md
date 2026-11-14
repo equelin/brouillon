@@ -17,7 +17,7 @@ machine as a single Node process; TypeScript is run directly by Node, with no bu
 - `src/main.ts`: entry point and command line.
 - `src/ui/`: `app.ts` is the whole screen and every command; `coach-pane.ts` (conversation
   and prompt), `selection.ts` (mouse selection inside one pane), `prompt-history.ts`,
-  `dialogs.ts`.
+  `dialogs.ts`, `theme.ts` (palettes, pills, gradient, rounded frames).
 - `src/editor/`: `buffer.ts` (text, cursor, undo; no terminal code) and `view.ts` (wrapping,
   rendering, keys).
 - `src/agent/`: `tools.ts` (everything the coach may do), `prompt.ts`, `coach.ts`, `models.ts`.
@@ -52,7 +52,11 @@ machine as a single Node process; TypeScript is run directly by Node, with no bu
 - The coach learns the application from `guideSection` in `src/agent/prompt.ts`. Keys that
   work in both panes and menu entries come from `App.shortcuts()` and `App.commands()`; the
   keys of the editor and of the prompt are prose there, to update with `view.ts` and
-  `coach-pane.ts`.
+  `coach-pane.ts`. `FOOTER_KEYS` in `app.ts` and `EMPTY_HINT` in `coach-pane.ts` name keys
+  by hand too.
+- Colors are named by role in `src/ui/theme.ts` (`color.primary`, `color.muted`, …) and read
+  the current theme when called, never at import: `setTheme` runs after the interface
+  starts. A new color goes into all four palettes; tests run with `ansi`.
 - `App.handleMouse` captures every left press on a pane and draws the selection itself:
   left alone, `pi-tui` selects whole screen rows, across both panes.
 - `matchesKey("\n", "enter")` is true, so `ctrl+j` cannot mean "new line" in the prompt.

@@ -105,6 +105,7 @@ case where the coach produces full text. Open the translation from the menu to r
 | `provider` | `openai` | Any provider id `pi-ai` knows |
 | `model` | `gpt-6.1-sol` | Falls back to the provider's first usable model. A ChatGPT account only serves the `gpt-5.6-*`, `gpt-6-*` and `gpt-6.1-*` models |
 | `thinkingLevel` | `low` | `off`, `minimal`, `low`, `medium` or `high` |
+| `theme` | `auto` | `auto`, `dark`, `light`, `ansi` or `plain` (see below) |
 | `editor` | `$VISUAL`, `$EDITOR`, `vi` | Command for `ctrl+o` |
 | `previewArgs` | `["server", "--buildDrafts"]` | Arguments for `hugo` |
 
@@ -126,3 +127,16 @@ Credentials are stored in `~/.config/brouillon/auth.json`, readable by you only.
 make check   # lint, type-check, tests
 make run     # start from this checkout
 ```
+
+## Colors
+
+The interface uses the [charmtone](https://github.com/charmbracelet/x/tree/main/exp/charmtone)
+palette of Charm. With `theme` set to `auto`, brouillon picks:
+
+- `dark` or `light`, in 24-bit color, from the background the terminal reports, when
+  `COLORTERM` says the terminal has 24-bit color;
+- `ansi`, the terminal's own 16 colors, otherwise;
+- `plain`, no color at all, when `NO_COLOR` is set.
+
+Set `theme` to force one, for instance when a terminal inside tmux does not pass
+`COLORTERM` on.

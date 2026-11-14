@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { highlightRange, rangeBetween, textInRange } from "../src/ui/selection.ts";
-import { style } from "../src/ui/theme.ts";
+import { color, style } from "../src/ui/theme.ts";
 
 const WIDTH = 12;
-const lines = [`${style.bold("first")} line  `, `second ${style.cyan("line")} `, "third line  "];
+const lines = [`${style.bold("first")} line  `, `second ${color.primary("line")} `, "third line  "];
 
 test("rangeBetween orders the two ends of a drag and includes both cells", () => {
   const forward = rangeBetween({ x: 2, y: 0 }, { x: 4, y: 1 });

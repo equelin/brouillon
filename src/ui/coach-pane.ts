@@ -8,7 +8,7 @@ import {
 import { TextBuffer } from "../editor/buffer.ts";
 import { EditorView } from "../editor/view.ts";
 import type { PromptHistory } from "./prompt-history.ts";
-import { accent, fit, style } from "./theme.ts";
+import { color, fit, style } from "./theme.ts";
 
 export interface Suggestion {
   original: string;
@@ -21,19 +21,19 @@ type Entry =
   | { kind: "suggestion"; suggestion: Suggestion; state: "pending" | "applied" | "dismissed" };
 
 const markdownTheme: MarkdownTheme = {
-  heading: accent,
+  heading: (text) => style.bold(color.accent(text)),
   link: style.underline,
-  linkUrl: style.dim,
-  code: style.green,
-  codeBlock: style.green,
-  codeBlockBorder: style.dim,
+  linkUrl: color.muted,
+  code: color.code,
+  codeBlock: color.code,
+  codeBlockBorder: color.subtle,
   quote: style.italic,
-  quoteBorder: style.dim,
-  hr: style.dim,
-  listBullet: style.cyan,
+  quoteBorder: color.subtle,
+  hr: color.subtle,
+  listBullet: color.primary,
   bold: style.bold,
   italic: style.italic,
-  strikethrough: style.dim,
+  strikethrough: color.muted,
   underline: style.underline,
 };
 
@@ -41,6 +41,15 @@ const MAX_PROMPT_ROWS = 8;
 /** Rows the transcript keeps when a long prompt would otherwise take the pane. */
 const MIN_TRANSCRIPT_ROWS = 6;
 const PROMPT_HINT = "enter: send · alt+enter: new line";
+const EMPTY_HINT = [
+  "Ask anything about the article, or:",
+  "ctrl+r reviews the paragraph under the cursor",
+  "ctrl+t rephrases the sentence under the cursor",
+  "ctrl+p lists the stages, from angle to publish",
+];
+const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+/** Milliseconds a spinner frame lasts; the app redraws at this pace while the coach works. */
+export const SPINNER_MS = 100;
 
 /** Conversation with the coach: a scrolling transcript above a prompt that grows with its text. */
 export class CoachPane {
@@ -51,7 +60,7 @@ export class CoachPane {
   private readonly prompt = new TextBuffer();
   private readonly promptView = new EditorView(this.prompt, {
     plain: true,
-    marker: style.cyan("› "),
+    marker: () => color.primary("› "),
   });
   /** Set while walking the history: steps back from the newest message, and the text left behind. */
   private recalled: { step: number; draft: string } | undefined;
@@ -205,24 +214,28 @@ export class CoachPane {
     } else if (entry.kind === "suggestion") {
       const { suggestion, state } = entry;
       const label = state === "pending" ? "Alternatives" : `Alternatives (${state})`;
+      const room = Math.max(1, width - 2);
       lines = [
-        accent(label),
-        ...wrapTextWithAnsi(style.dim(`“${suggestion.original}”`), width),
+        style.bold(color.highlight(label)),
+        ...wrapTextWithAnsi(color.muted(`“${suggestion.original}”`), room),
         ...suggestion.alternatives.flatMap((alternative, index) =>
-          wrapTextWithAnsi(`${style.yellow(`${index + 1}.`)} ${alternative}`, width),
+          wrapTextWithAnsi(`${style.bold(color.highlight(`${index + 1}.`))} ${alternative}`, room),
         ),
-        ...wrapTextWithAnsi(style.dim(suggestion.reason), width),
+        ...wrapTextWithAnsi(color.muted(suggestion.reason), room),
       ];
       if (state === "pending") {
         const keys = suggestion.alternatives.map((_, index) => `alt+${index + 1}`).join(", ");
-        lines.push(style.dim(`${keys} to apply, alt+0 to dismiss`));
+        lines.push(...wrapTextWithAnsi(color.muted(`${keys} to apply, alt+0 to dismiss`), room));
       }
+      // A block the author still has to answer stands out; an answered one recedes.
+      const bar = state === "pending" ? color.highlight("▌") : color.subtle("▌");
+      lines = lines.map((line) => `${bar} ${line}`);
     } else if (entry.kind === "author") {
       lines = wrapTextWithAnsi(entry.text, Math.max(1, width - 2)).map(
-        (line) => `${style.cyan("▌")} ${style.bold(line)}`,
+        (line) => `${color.primary("▌")} ${style.bold(line)}`,
       );
     } else {
-      const paint = entry.kind === "note" ? style.dim : style.red;
+      const paint = entry.kind === "note" ? color.muted : color.error;
       lines = wrapTextWithAnsi(paint(entry.text), width);
     }
     this.cache.set(entry, { key, lines });
@@ -231,22 +244,27 @@ export class CoachPane {
 
   /** The rule, the activity and the prompt, with the index of the prompt's first row. */
   private renderPrompt(width: number, height: number): { lines: string[]; textRow: number } {
-    const rule = "─".repeat(width);
-    const lines = [this.focused ? style.cyan(rule) : style.dim(rule)];
+    const lines = [color.subtle("─".repeat(width))];
     if (this.activity) {
-      const seconds = Math.floor((Date.now() - this.activity.since) / 1000);
-      lines.push(style.dim(`… ${this.activity.label} · ${seconds}s (esc to stop)`));
+      const elapsed = Date.now() - this.activity.since;
+      const spinner = SPINNER[Math.floor(elapsed / SPINNER_MS) % SPINNER.length] ?? "";
+      const seconds = Math.floor(elapsed / 1000);
+      lines.push(
+        `${color.accent(spinner)} ${color.muted(`${this.activity.label} · ${seconds}s (esc to stop)`)}`,
+      );
     }
     const textRow = lines.length;
     if (!this.focused && this.prompt.getText() === "") {
-      lines.push(style.dim("› Ask the coach (ctrl+g)"));
+      lines.push(color.muted("› Ask the coach (ctrl+g)"));
     } else {
       const maxRows = Math.max(1, Math.min(MAX_PROMPT_ROWS, height - MIN_TRANSCRIPT_ROWS));
       const rows = Math.min(this.promptView.rowCount(width), maxRows);
       lines.push(...this.promptView.render(width, rows));
     }
     if (this.focused) {
-      lines.push(style.dim(this.history.length > 0 ? `${PROMPT_HINT} · ↑: history` : PROMPT_HINT));
+      lines.push(
+        color.muted(this.history.length > 0 ? `${PROMPT_HINT} · ↑: history` : PROMPT_HINT),
+      );
     }
     return { lines, textRow };
   }
@@ -257,7 +275,10 @@ export class CoachPane {
     const room = Math.max(0, height - footer.lines.length);
     this.promptTop = room + footer.textRow;
     this.pageSize = Math.max(1, room - 1);
-    const transcript: string[] = [];
+    const transcript: string[] =
+      this.entries.length > 0
+        ? []
+        : EMPTY_HINT.flatMap((line) => wrapTextWithAnsi(color.muted(line), width));
     for (const entry of this.entries) {
       const lines = this.renderEntry(entry, width);
       if (lines.length === 0) continue;
@@ -269,7 +290,7 @@ export class CoachPane {
     const visible = transcript.slice(Math.max(0, end - room), end);
     while (visible.length < room) visible.push("");
     if (this.scrollBack > 0 && room > 0) {
-      visible[room - 1] = style.dim(`↓ ${this.scrollBack} more lines`);
+      visible[room - 1] = color.muted(`↓ ${this.scrollBack} more lines`);
     }
     return [...visible, ...footer.lines].slice(0, height).map((line) => fit(line, width));
   }

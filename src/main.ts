@@ -7,6 +7,7 @@ import { authPath, configPath, dataDir, loadConfig } from "./config.ts";
 import { FileCredentialStore } from "./credentials.ts";
 import { Repo } from "./git.ts";
 import { App } from "./ui/app.ts";
+import { chooseTheme, setTheme } from "./ui/theme.ts";
 
 const USAGE = `brouillon: write and publish articles with a writing coach
 
@@ -70,6 +71,10 @@ async function main(): Promise<void> {
   tui.addChild(app);
   tui.setFocus(app);
   tui.start();
+  // The terminal can only be asked for its background once the interface owns it.
+  const reported = await tui.queryTerminalColors({ timeoutMs: 200 }).catch(() => undefined);
+  setTheme(chooseTheme(config.theme, process.env, reported?.background));
+  tui.requestRender(true);
   await app.start();
 }
 

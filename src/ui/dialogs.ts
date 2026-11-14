@@ -8,29 +8,23 @@ import {
   SelectList,
   type SelectListTheme,
   type TUI,
-  truncateToWidth,
-  visibleWidth,
 } from "@earendil-works/pi-tui";
-import { accent, fit, style } from "./theme.ts";
+import { color, fit, frame, frameInner, pill, style } from "./theme.ts";
 
 const listTheme: SelectListTheme = {
-  selectedPrefix: style.cyan,
+  selectedPrefix: color.accent,
   selectedText: style.bold,
-  description: style.dim,
-  scrollInfo: style.dim,
-  noMatch: style.dim,
+  description: color.muted,
+  scrollInfo: color.muted,
+  noMatch: color.muted,
 };
 
+const PAD = 1;
+
 function framed(title: string, body: string[], width: number): string[] {
-  const inner = Math.max(1, width - 4);
-  const row = (line: string) => `${style.dim("│")} ${fit(line, inner)} ${style.dim("│")}`;
-  const label = ` ${truncateToWidth(title, Math.max(1, inner - 2))} `;
-  const fill = "─".repeat(Math.max(0, width - 3 - visibleWidth(label)));
-  return [
-    style.dim("╭─") + accent(label) + style.dim(`${fill}╮`),
-    ...body.map(row),
-    style.dim(`╰${"─".repeat(Math.max(0, width - 2))}╯`),
-  ];
+  const inner = frameInner(width, PAD);
+  const lines = body.map((line) => fit(line, inner));
+  return frame(lines, width, { title: pill(title, "stage"), focused: true, padLeft: PAD });
 }
 
 /** A filterable list in a frame. */
@@ -101,7 +95,7 @@ class Picker implements Component, Focusable {
   }
 
   render(width: number): string[] {
-    const inner = Math.max(1, width - 4);
+    const inner = frameInner(width, PAD);
     return framed(this.title, [...this.input.render(inner), ...this.list.render(inner)], width);
   }
 }
@@ -136,7 +130,7 @@ class Prompt implements Component, Focusable {
   invalidate(): void {}
 
   render(width: number): string[] {
-    return framed(this.title, this.input.render(Math.max(1, width - 4)), width);
+    return framed(this.title, this.input.render(frameInner(width, PAD)), width);
   }
 }
 

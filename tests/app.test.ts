@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 import {
   createModels,
   fauxAssistantMessage,
@@ -17,9 +17,13 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { CoachModels } from "../src/agent/models.ts";
+import { THEMES } from "../src/config.ts";
 import { parseMeta } from "../src/frontmatter.ts";
 import { App } from "../src/ui/app.ts";
+import { setTheme } from "../src/ui/theme.ts";
 import { fixture, git } from "./helpers.ts";
+
+afterEach(() => setTheme("ansi"));
 
 const ROWS = 40;
 const KEY = {
@@ -99,12 +103,15 @@ async function setup() {
   return { app, faux, config, repo, origin, screen, answer, type, text, plain, mouse, locate };
 }
 
-test("every frame fills the terminal exactly, in wide and narrow layouts", async () => {
+test("every frame fills the terminal exactly, in every layout and theme", async () => {
   const { app } = await setup();
-  for (const width of [150, 110, 80, 40]) {
-    const lines = app.render(width);
-    assert.equal(lines.length, ROWS);
-    for (const line of lines) assert.equal(visibleWidth(line), width);
+  for (const theme of THEMES) {
+    setTheme(theme);
+    for (const width of [150, 110, 80, 40]) {
+      const lines = app.render(width);
+      assert.equal(lines.length, ROWS);
+      for (const line of lines) assert.equal(visibleWidth(line), width);
+    }
   }
 });
 

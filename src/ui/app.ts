@@ -44,7 +44,7 @@ import {
   parseArticleName,
   slugify,
 } from "../posts.ts";
-import { CoachPane, type Suggestion } from "./coach-pane.ts";
+import { CoachPane, SPINNER_MS, type Suggestion } from "./coach-pane.ts";
 import { Dialogs } from "./dialogs.ts";
 import { PromptHistory } from "./prompt-history.ts";
 import {
@@ -54,7 +54,7 @@ import {
   rangeBetween,
   textInRange,
 } from "./selection.ts";
-import { accent, fit, style } from "./theme.ts";
+import { color, fit, frame, frameInner, gradient, pill, style } from "./theme.ts";
 
 interface Comment {
   quote: string;
@@ -75,6 +75,14 @@ const PASTE_END = "\x1b[201~";
 const WIDE_LAYOUT = 110;
 const AUTOSAVE_MS = 2000;
 const WORDS_PER_MINUTE = 220;
+const FOOTER_KEYS = [
+  ["^P", "menu"],
+  ["^G", "coach"],
+  ["^S", "save"],
+  ["^R", "review"],
+  ["^T", "rephrase"],
+  ["^Q", "quit"],
+] as const;
 const SIGNED_OUT = "The coach is not signed in. Open the menu (ctrl+p) and choose Sign in.";
 
 function exists(path: string): Promise<boolean> {
@@ -292,7 +300,7 @@ export class App implements Component, Focusable {
         if (event.type === "start") {
           this.replyOpen = false;
           this.pane.setActivity("thinking");
-          this.activityClock ??= setInterval(() => this.tui.requestRender(), 1000).unref();
+          this.activityClock ??= setInterval(() => this.tui.requestRender(), SPINNER_MS).unref();
         } else if (event.type === "reply") {
           if (!this.replyOpen) this.pane.beginReply();
           this.replyOpen = true;
@@ -980,51 +988,57 @@ export class App implements Component, Focusable {
     return { handled: true, render: true };
   }
 
-  private header(width: number): string {
-    if (!this.post) return fit(accent(" brouillon"), width);
+  private wordStats(): string {
     if (this.stats.version !== this.buffer.version) {
       this.stats = { version: this.buffer.version, words: countWords(this.buffer.getText()) };
     }
-    const meta = this.meta();
     const minutes = Math.max(1, Math.round(this.stats.words / WORDS_PER_MINUTE));
-    const parts = [
-      accent(` ${meta.title || this.post.slug}`),
-      style.dim(`[${this.post.lang}]`),
-      meta.draft ? style.yellow("draft") : style.green("published"),
-      style.dim(`${this.stats.words} words · ${minutes} min`),
-      style.dim(`stage: ${this.stage}`),
-      this.unsynced ? style.yellow("● not pushed") : style.dim("pushed"),
-    ];
-    return fit(parts.join("  "), width);
+    return `${this.stats.words} words · ${minutes} min`;
+  }
+
+  /** What the article is, as badges: language, draft or published, stage, pushed or not. */
+  private badges(): string {
+    if (!this.post) return "";
+    return [
+      pill(this.post.lang, "neutral"),
+      this.meta().draft ? pill("draft", "draft") : pill("published", "good"),
+      pill(`stage: ${this.stage}`, "stage"),
+      this.unsynced ? pill("● not pushed", "alert") : pill("✓ pushed", "neutral"),
+    ].join(" ");
   }
 
   private footer(width: number): string {
-    const hints = "^P menu  ^G coach  ^S save  ^R review  ^T rephrase  ^Q quit";
-    const text = this.status.error ? style.red(this.status.text) : this.status.text;
+    const hints = FOOTER_KEYS.map(
+      ([key, label]) => `${style.bold(key)} ${color.muted(label)}`,
+    ).join(color.subtle(" • "));
+    const text = this.status.error ? color.error(this.status.text) : this.status.text;
+    const badges = this.badges();
+    const left = badges ? ` ${badges}  ${text}` : ` ${text}`;
     const room = width - visibleWidth(hints) - 2;
-    // The status line says what just happened; hints give way to it on a narrow terminal.
-    if (room < visibleWidth(text) + 2) return fit(` ${text}`, width);
-    return `${fit(` ${text}`, room)}  ${style.dim(hints)}`;
+    // The status says what just happened; hints give way to it on a narrow terminal.
+    if (room < visibleWidth(left) + 1) return fit(left, width);
+    return `${fit(left, room)} ${hints} `;
   }
 
   private renderEditor(width: number, height: number): string[] {
     if (!this.post) {
       const lines = Array.from({ length: height }, () => " ".repeat(width));
-      const message = "No article open: ctrl+p opens the menu";
-      lines[Math.floor(height / 2)] = fit(`  ${style.dim(message)}`, width);
+      const middle = Math.floor(height / 2);
+      lines[middle - 1] = fit(`  ${gradient("brouillon")}`, width);
+      lines[middle] = fit(`  ${color.muted("No article open: ctrl+p opens the menu")}`, width);
       return lines;
     }
     this.refreshMarks();
     const notes = this.commentsAtCursor().flatMap((comment) =>
-      wrapTextWithAnsi(`${style.yellow("●")} ${comment.note}`, Math.max(10, width - 2)),
+      wrapTextWithAnsi(`${color.highlight("●")} ${comment.note}`, Math.max(10, width - 2)),
     );
     const panel =
       notes.length === 0
         ? []
         : [
-            style.dim("─".repeat(width)),
+            color.subtle("─".repeat(width)),
             ...notes.slice(0, 5),
-            style.dim("ctrl+x dismisses the note · ctrl+n jumps to the next one"),
+            color.muted("ctrl+x dismisses the note · ctrl+n jumps to the next one"),
           ];
     const editorHeight = Math.max(1, height - panel.length);
     return [
@@ -1033,8 +1047,8 @@ export class App implements Component, Focusable {
     ];
   }
 
-  /** Record a pane's frame and place, and draw the selection that belongs to it. */
-  private framed(pane: PaneName, lines: string[], rect: Rect): string[] {
+  /** Record a pane's lines and place, and draw the selection that belongs to it. */
+  private withSelection(pane: PaneName, lines: string[], rect: Rect): string[] {
     this.panes[pane] = { rect, lines };
     const { selection } = this;
     if (selection?.pane !== pane) return lines;
@@ -1046,36 +1060,52 @@ export class App implements Component, Focusable {
     return highlightRange(lines, selection.range, rect.width);
   }
 
+  /** A pane in its rounded frame, `width` cells wide and `height` rows high, placed at column `x`. */
+  private boxed(pane: PaneName, x: number, width: number, height: number): string[] {
+    // The editor's own gutter stands in for the left padding the coach gets.
+    const padLeft = pane === "editor" ? 0 : 1;
+    const rect = {
+      x: x + 1 + padLeft,
+      y: 1,
+      width: frameInner(width, padLeft),
+      height: height - 2,
+    };
+    const lines =
+      pane === "editor"
+        ? this.renderEditor(rect.width, rect.height)
+        : this.pane.render(rect.width, rect.height);
+    const edges =
+      pane === "editor"
+        ? {
+            title: gradient(this.post ? this.meta().title || this.post.slug : "brouillon"),
+            label: this.post ? color.muted(this.wordStats()) : undefined,
+          }
+        : {
+            title: style.bold(color.primary("Coach")),
+            label: color.muted(this.coach?.modelName ?? "signed out"),
+          };
+    return frame(this.withSelection(pane, lines, rect), width, {
+      ...edges,
+      focused: this.focus === pane,
+      padLeft,
+    });
+  }
+
   render(width: number): string[] {
-    const height = Math.max(4, this.tui.terminal.rows);
-    const bodyHeight = height - 2;
+    const height = Math.max(6, this.tui.terminal.rows) - 1;
     this.panes = {};
     let body: string[];
     if (width >= WIDE_LAYOUT) {
-      const coachWidth = Math.max(36, Math.floor(width * 0.36));
-      const editorWidth = width - coachWidth - 3;
-      const left = this.framed("editor", this.renderEditor(editorWidth, bodyHeight), {
-        x: 0,
-        y: 1,
-        width: editorWidth,
-        height: bodyHeight,
-      });
-      const right = this.framed("coach", this.pane.render(coachWidth, bodyHeight), {
-        x: editorWidth + 3,
-        y: 1,
-        width: coachWidth,
-        height: bodyHeight,
-      });
-      const bar = this.focus === "coach" ? style.cyan("│") : style.dim("│");
-      body = left.map((line, row) => `${line} ${bar} ${right[row] ?? ""}`);
+      const coachWidth = Math.max(40, Math.floor(width * 0.36));
+      const editorWidth = width - coachWidth - 1;
+      const left = this.boxed("editor", 0, editorWidth, height);
+      const right = this.boxed("coach", editorWidth + 1, coachWidth, height);
+      body = left.map((line, row) => `${line} ${right[row] ?? ""}`);
     } else {
-      const lines =
-        this.focus === "coach"
-          ? this.pane.render(width, bodyHeight)
-          : this.renderEditor(width, bodyHeight);
-      body = this.framed(this.focus, lines, { x: 0, y: 1, width, height: bodyHeight });
+      body = this.boxed(this.focus, 0, width, height);
     }
     if (this.selection && !this.panes[this.selection.pane]) this.selection = undefined;
-    return [this.header(width), ...body, this.footer(width)];
+    // A terminal narrower than a frame's two edges must still get lines of its own width.
+    return [...body.map((line) => fit(line, width)), this.footer(width)];
   }
 }

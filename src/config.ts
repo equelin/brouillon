@@ -4,6 +4,13 @@ import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/**
+ * "dark" and "light" use Charm's charmtone palette in 24-bit color; "ansi" keeps to the
+ * terminal's own 16 colors, so it follows any terminal theme; "plain" uses no color at all.
+ */
+export const THEMES = ["dark", "light", "ansi", "plain"] as const;
+export type ThemeName = (typeof THEMES)[number];
+
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
 
 export interface Config {
@@ -21,6 +28,8 @@ export interface Config {
   /** Model id; when unavailable, the first available model of the provider is used. */
   model: string;
   thinkingLevel: ThinkingLevel;
+  /** Colors of the interface; "auto" picks one from what the terminal reports. */
+  theme: ThemeName | "auto";
   /** External editor command; falls back to $VISUAL, $EDITOR, then vi. */
   editor?: string;
   /** Arguments passed to `hugo` for the local preview. */
@@ -70,6 +79,7 @@ export function defaultConfig(): Config {
     provider: "openai",
     model: "gpt-6.1-sol",
     thinkingLevel: "low",
+    theme: "auto",
     previewArgs: ["server", "--buildDrafts"],
   };
 }
@@ -95,6 +105,9 @@ export async function loadConfig(path = configPath()): Promise<Config> {
   const config = { ...defaultConfig(), ...(parsed as Partial<Config>) };
   if (!Array.isArray(config.languages) || config.languages.length === 0) {
     throw new Error(`${path}: "languages" must list at least one language`);
+  }
+  if (config.theme !== "auto" && !THEMES.includes(config.theme)) {
+    throw new Error(`${path}: "theme" must be auto, ${THEMES.join(", ")}`);
   }
   return config;
 }

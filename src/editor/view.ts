@@ -7,7 +7,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { CellRange } from "../ui/selection.ts";
-import { style } from "../ui/theme.ts";
+import { color, style } from "../ui/theme.ts";
 import type { Position, TextBuffer } from "./buffer.ts";
 
 interface Row {
@@ -93,9 +93,9 @@ function classify(lines: readonly string[]): LineKind[] {
 }
 
 const paint: Record<LineKind, (text: string) => string> = {
-  meta: style.dim,
-  code: style.green,
-  heading: (text) => style.bold(style.cyan(text)),
+  meta: color.muted,
+  code: color.code,
+  heading: (text) => style.bold(color.accent(text)),
   quote: style.italic,
   text: (text) => text,
 };
@@ -104,7 +104,7 @@ export interface EditorViewOptions {
   /** Show the text as typed, without the article's markdown and front matter colors. */
   plain?: boolean;
   /** Two cells drawn in the gutter of the first row, such as a prompt sign. */
-  marker?: string;
+  marker?: () => string;
 }
 
 /** Soft-wrapped, scrolling view of a TextBuffer with its key bindings. */
@@ -318,10 +318,10 @@ export class EditorView {
         continue;
       }
       const text = this.buffer.line(row.line);
-      const color = paint[this.kinds[row.line] ?? "text"];
+      const tint = paint[this.kinds[row.line] ?? "text"];
       const marked = row.start === 0 && this.markedLines.has(row.line);
-      let line = marked ? `${style.yellow("●")} ` : "  ";
-      if (i === 0 && this.options.marker) line = this.options.marker;
+      let line = marked ? `${color.highlight("●")} ` : "  ";
+      if (i === 0 && this.options.marker) line = this.options.marker();
       let cells = GUTTER;
       if (i === cursorRow) {
         const before = displayable(text.slice(row.start, cursor.col));
@@ -329,12 +329,12 @@ export class EditorView {
         const first = graphemes.segment(rest)[Symbol.iterator]().next().value?.segment ?? "";
         const under = first === "" ? " " : displayable(first);
         const after = displayable(rest.slice(first.length));
-        const caret = this.focused ? CURSOR_MARKER + renderFakeCursor(under) : color(under);
-        line += color(before) + caret + color(after);
+        const caret = this.focused ? CURSOR_MARKER + renderFakeCursor(under) : tint(under);
+        line += tint(before) + caret + tint(after);
         cells += visibleWidth(before) + visibleWidth(under) + visibleWidth(after);
       } else {
         const shown = displayable(text.slice(row.start, row.end));
-        line += color(shown);
+        line += tint(shown);
         cells += visibleWidth(shown);
       }
       output.push(line + " ".repeat(Math.max(0, width - cells)));
