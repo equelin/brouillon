@@ -15,7 +15,14 @@ import {
 } from "@earendil-works/pi-tui";
 import { Coach } from "../agent/coach.ts";
 import { type CoachModels, loginOnTerminal, resolveModel } from "../agent/models.ts";
-import { STAGES, type Stage, translateRequest, turnContext } from "../agent/prompt.ts";
+import {
+  type AppGuide,
+  STAGES,
+  type Stage,
+  systemPrompt,
+  translateRequest,
+  turnContext,
+} from "../agent/prompt.ts";
 import type { Workspace } from "../agent/tools.ts";
 import type { Config } from "../config.ts";
 import { TextBuffer } from "../editor/buffer.ts";
@@ -279,6 +286,7 @@ export class App implements Component, Focusable {
         model,
         thinkingLevel: this.config.thinkingLevel,
         workspace: this.workspace,
+        systemPrompt: systemPrompt(this.guide()),
       });
       this.coach.subscribe((event) => {
         if (event.type === "start") {
@@ -748,9 +756,16 @@ export class App implements Component, Focusable {
   }
 
   /** Every command of the menu; those with a key also run from the keyboard. */
-  private commands(): (SelectItem & { key?: KeyId; run: () => unknown })[] {
+  private commands(): (SelectItem & { key?: KeyId; guide?: string; run: () => unknown })[] {
     const other = this.config.languages.filter((lang) => lang !== this.post?.lang).join("/");
-    const commands: { label: string; key?: KeyId; description?: string; run: () => unknown }[] = [
+    const commands: {
+      label: string;
+      /** How the coach is told about an entry whose label changes with the article or the state. */
+      guide?: string;
+      key?: KeyId;
+      description?: string;
+      run: () => unknown;
+    }[] = [
       { label: "Open or create an article", run: () => this.chooseArticle() },
       {
         label: "Save and push",
@@ -768,11 +783,16 @@ export class App implements Component, Focusable {
         run: () => this.sendToCoach("Review the paragraph under my cursor."),
       },
       { label: "Rephrase this sentence", key: "ctrl+t", run: () => this.rephraseSentence() },
-      { label: `Translate into ${other}`, run: () => this.translate() },
+      {
+        label: `Translate into ${other}`,
+        guide: "Translate into the other language",
+        run: () => this.translate(),
+      },
       { label: "Publish to the live site", run: () => this.publish() },
       { label: "Edit in $EDITOR", key: "ctrl+o", run: () => this.openExternalEditor() },
       {
         label: this.preview ? "Stop the preview" : "Preview with hugo",
+        guide: "Preview with hugo (the same entry then reads Stop the preview)",
         run: () => this.togglePreview(),
       },
       { label: "Start a new conversation", run: () => this.newConversation() },
@@ -820,26 +840,51 @@ export class App implements Component, Focusable {
     this.tui.requestRender();
   }
 
-  private handleKey(data: string): void {
-    const globals: [KeyId, () => unknown][] = [
-      ...this.commands().flatMap((command): [KeyId, () => unknown][] =>
-        command.key ? [[command.key, command.run]] : [],
-      ),
-      ["ctrl+p", () => this.openMenu()],
-      ["ctrl+n", () => this.nextComment()],
-      ["ctrl+x", () => this.dismissComment()],
-      ["tab", () => this.setFocus(this.focus === "editor" ? "coach" : "editor")],
-      ["alt+0", () => this.resolveSuggestion(0)],
-      ["alt+1", () => this.resolveSuggestion(1)],
-      ["alt+2", () => this.resolveSuggestion(2)],
-      ["alt+3", () => this.resolveSuggestion(3)],
+  /** Every key that works in both panes; the coach is told this same list. */
+  private shortcuts(): { key: KeyId; label: string; run: () => unknown }[] {
+    const other = this.focus === "editor" ? "coach" : "editor";
+    return [
+      ...this.commands().flatMap(({ key, label, run }) => (key ? [{ key, label, run }] : [])),
+      { key: "ctrl+p", label: "Open the menu", run: () => this.openMenu() },
+      {
+        key: "ctrl+g",
+        label: "Switch between the article and the coach",
+        run: () => this.setFocus(other),
+      },
+      { key: "ctrl+n", label: "Jump to the coach's next note", run: () => this.nextComment() },
+      {
+        key: "ctrl+x",
+        label: "Dismiss the note under the cursor",
+        run: () => this.dismissComment(),
+      },
+      ...([1, 2, 3] as const).map((choice) => ({
+        key: `alt+${choice}` as const,
+        label: `Apply alternative ${choice} of the oldest pending suggestion`,
+        run: () => this.resolveSuggestion(choice),
+      })),
+      {
+        key: "alt+0",
+        label: "Dismiss the oldest pending suggestion",
+        run: () => this.resolveSuggestion(0),
+      },
     ];
-    for (const [key, action] of globals) {
-      if (matchesKey(data, key)) {
-        void action();
-        this.tui.requestRender();
-        return;
-      }
+  }
+
+  private guide(): AppGuide {
+    return {
+      shortcuts: this.shortcuts().map(({ key, label }) => ({ key, label })),
+      menu: this.commands()
+        .filter((command) => !command.key)
+        .map(({ label, guide, description }) => ({ label: guide ?? label, description })),
+    };
+  }
+
+  private handleKey(data: string): void {
+    const shortcut = this.shortcuts().find(({ key }) => matchesKey(data, key));
+    if (shortcut) {
+      void shortcut.run();
+      this.tui.requestRender();
+      return;
     }
     if (matchesKey(data, "escape") && this.coach?.busy) {
       this.coach.abort();
@@ -954,7 +999,7 @@ export class App implements Component, Focusable {
   }
 
   private footer(width: number): string {
-    const hints = "^P menu  tab coach  ^S save  ^R review  ^T rephrase  ^Q quit";
+    const hints = "^P menu  ^G coach  ^S save  ^R review  ^T rephrase  ^Q quit";
     const text = this.status.error ? style.red(this.status.text) : this.status.text;
     const room = width - visibleWidth(hints) - 2;
     // The status line says what just happened; hints give way to it on a narrow terminal.

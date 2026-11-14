@@ -3,7 +3,6 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ThinkingLevel } from "../config.ts";
 import type { CoachModels } from "./models.ts";
-import { SYSTEM_PROMPT } from "./prompt.ts";
 import { coachTools, type Workspace } from "./tools.ts";
 
 export type CoachEvent =
@@ -19,6 +18,7 @@ export interface CoachOptions {
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   workspace: Workspace;
+  systemPrompt: string;
 }
 
 /** The writing coach: one conversation with a model that can only read, comment and suggest. */
@@ -31,7 +31,7 @@ export class Coach {
     this.modelName = options.model.name ?? options.model.id;
     this.agent = new Agent({
       initialState: {
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: options.systemPrompt,
         model: options.model,
         thinkingLevel: options.model.reasoning ? options.thinkingLevel : "off",
         tools: coachTools(options.workspace),

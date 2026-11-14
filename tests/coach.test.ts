@@ -30,6 +30,7 @@ function setup() {
     model: faux.getModel(),
     thinkingLevel: "low",
     workspace,
+    systemPrompt: "You are a writing coach.",
   });
   const events: CoachEvent[] = [];
   coach.subscribe((event) => events.push(event));

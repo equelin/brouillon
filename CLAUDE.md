@@ -49,6 +49,10 @@ machine as a single Node process; TypeScript is run directly by Node, with no bu
 - `pi-tui` components only receive a width. `App.render` returns exactly `terminal.rows`
   lines and lays out the panes itself; its `capturesViewportInput` keeps page keys from
   scrolling the alternate screen.
+- The coach learns the application from `guideSection` in `src/agent/prompt.ts`. Keys that
+  work in both panes and menu entries come from `App.shortcuts()` and `App.commands()`; the
+  keys of the editor and of the prompt are prose there, to update with `view.ts` and
+  `coach-pane.ts`.
 - `App.handleMouse` captures every left press on a pane and draws the selection itself:
   left alone, `pi-tui` selects whole screen rows, across both panes.
 - `matchesKey("\n", "enter")` is true, so `ctrl+j` cannot mean "new line" in the prompt.

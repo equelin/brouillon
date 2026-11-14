@@ -67,3 +67,20 @@ test("clicking places the cursor on the clicked cell", () => {
   view.clickAt(2 + 3, 1);
   assert.deepEqual(buffer.cursor, { line: 1, col: 3 });
 });
+
+test("tab indents to the next multiple of four and shift+tab removes one level", () => {
+  const buffer = new TextBuffer("ab");
+  const view = new EditorView(buffer);
+  view.render(30, 5);
+  buffer.moveTo({ line: 0, col: 1 });
+  view.handleInput("\t");
+  assert.equal(buffer.getText(), "a   b");
+  buffer.reset("      code");
+  buffer.moveTo({ line: 0, col: 8 });
+  view.handleInput("\x1b[Z");
+  assert.equal(buffer.getText(), "  code");
+  assert.deepEqual(buffer.cursor, { line: 0, col: 4 });
+  view.handleInput("\x1b[Z");
+  view.handleInput("\x1b[Z");
+  assert.equal(buffer.getText(), "code");
+});

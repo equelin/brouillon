@@ -22,6 +22,7 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const GUTTER = 2;
 const MAX_TEXT_WIDTH = 96;
 const SCROLL_MARGIN = 2;
+const INDENT = 4;
 
 /** One cell per UTF-16 unit of a control character, so columns keep mapping to the text. */
 function displayable(text: string): string {
@@ -251,6 +252,8 @@ export class EditorView {
       [["ctrl+home"], () => buffer.moveDocumentStart()],
       [["ctrl+end"], () => buffer.moveDocumentEnd()],
       [["enter", "shift+enter"], () => buffer.insert("\n")],
+      [["tab"], () => buffer.insert(" ".repeat(INDENT - (buffer.cursor.col % INDENT)))],
+      [["shift+tab"], () => this.outdent()],
       [["backspace", "shift+backspace"], () => buffer.backspace()],
       [["delete"], () => buffer.deleteForward()],
       [["ctrl+w", "alt+backspace", "ctrl+backspace"], () => buffer.deleteWordLeft()],
@@ -272,6 +275,14 @@ export class EditorView {
     if (/[\x00-\x1f\x7f-\x9f]/.test(printable)) return false;
     buffer.insert(printable);
     return true;
+  }
+
+  private outdent(): void {
+    const { line, col } = this.buffer.cursor;
+    const spaces = Math.min(INDENT, /^ */.exec(this.buffer.line(line))?.[0].length ?? 0);
+    if (spaces === 0) return;
+    this.buffer.replaceRange({ start: { line, col: 0 }, end: { line, col: spaces } }, "");
+    this.buffer.moveTo({ line, col: Math.max(0, col - spaces) });
   }
 
   paste(text: string): void {

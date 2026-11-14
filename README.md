@@ -28,7 +28,8 @@ On first start brouillon clones the blog into `~/.local/share/brouillon/equelin.
 | Key | Action |
 |---|---|
 | `ctrl+p` | Menu: every command below, plus stages, translation, publishing, preview, sign-in |
-| `tab` | Switch between the article and the coach |
+| `ctrl+g` | Switch between the article and the coach |
+| `tab` / `shift+tab` | Indent to the next multiple of four spaces / remove one level |
 | `ctrl+s` | Save and push the draft |
 | `ctrl+r` | Ask the coach to review the paragraph under the cursor |
 | `ctrl+t` | Ask for alternative phrasings of the sentence under the cursor |

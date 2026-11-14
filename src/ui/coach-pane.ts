@@ -239,7 +239,7 @@ export class CoachPane {
     }
     const textRow = lines.length;
     if (!this.focused && this.prompt.getText() === "") {
-      lines.push(style.dim("› Ask the coach (tab)"));
+      lines.push(style.dim("› Ask the coach (ctrl+g)"));
     } else {
       const maxRows = Math.max(1, Math.min(MAX_PROMPT_ROWS, height - MIN_TRANSCRIPT_ROWS));
       const rows = Math.min(this.promptView.rowCount(width), maxRows);

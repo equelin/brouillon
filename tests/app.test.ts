@@ -22,7 +22,14 @@ import { App } from "../src/ui/app.ts";
 import { fixture, git } from "./helpers.ts";
 
 const ROWS = 40;
-const KEY = { down: "\x1b[B", enter: "\r", tab: "\t", ctrlN: "\x0e", ctrlP: "\x10", ctrlX: "\x18" };
+const KEY = {
+  down: "\x1b[B",
+  enter: "\r",
+  ctrlG: "\x07",
+  ctrlN: "\x0e",
+  ctrlP: "\x10",
+  ctrlX: "\x18",
+};
 
 async function until(condition: () => boolean, what: string): Promise<void> {
   for (let attempt = 0; attempt < 400; attempt++) {
@@ -116,7 +123,7 @@ test("a suggestion from the coach changes the text only when the author applies 
     ),
     fauxAssistantMessage([fauxText("Pick the one that sounds like you.")]),
   ]);
-  app.handleInput(KEY.tab);
+  app.handleInput(KEY.ctrlG);
   type("help me with that sentence");
   app.handleInput(KEY.enter);
   await until(() => text().includes("Pick the one that sounds"), "the coach's reply");
@@ -138,7 +145,7 @@ test("a comment shows next to its paragraph until the author dismisses it", asyn
     ),
     fauxAssistantMessage([fauxText("One note left.")]),
   ]);
-  app.handleInput(KEY.tab);
+  app.handleInput(KEY.ctrlG);
   type("review");
   app.handleInput(KEY.enter);
   await until(() => text().includes("One note left."), "the coach's reply");
@@ -203,7 +210,7 @@ test("saving from the editor commits the typed text on the article's draft branc
 test("a translation request the coach cannot take leaves no permission to write behind", async () => {
   const { app, faux, config, answer, type, text } = await setup();
   faux.setResponses([fauxAssistantMessage([fauxText("Slow answer.")])]);
-  app.handleInput(KEY.tab);
+  app.handleInput(KEY.ctrlG);
   type("first question");
   app.handleInput(KEY.enter);
   app.handleInput(KEY.ctrlP);
@@ -226,7 +233,7 @@ test("a translation request the coach cannot take leaves no permission to write 
 test("a drag selects and copies text of the pane it started in only", async () => {
   const { app, faux, screen, type, text, mouse, locate } = await setup();
   faux.setResponses([fauxAssistantMessage([fauxText("Coach words.")])]);
-  app.handleInput(KEY.tab);
+  app.handleInput(KEY.ctrlG);
   type("hello");
   app.handleInput(KEY.enter);
   await until(() => text().includes("Coach words."), "the coach's reply");
@@ -264,7 +271,7 @@ test("a selection in the editor copies the article's text, not its wrapped rows"
 test("the prompt takes several lines and recalls earlier messages", async () => {
   const { app, faux, type, text, plain } = await setup();
   faux.setResponses([fauxAssistantMessage([fauxText("Noted.")])]);
-  app.handleInput(KEY.tab);
+  app.handleInput(KEY.ctrlG);
   type("first line");
   app.handleInput("\x1b\r");
   type("second line\\");
@@ -290,7 +297,7 @@ test("the prompt takes several lines and recalls earlier messages", async () => 
 test("a message sent while the coach answers stays in the prompt", async () => {
   const { app, faux, type, text, plain } = await setup();
   faux.setResponses([fauxAssistantMessage([fauxText("Slow answer.")])]);
-  app.handleInput(KEY.tab);
+  app.handleInput(KEY.ctrlG);
   type("first question");
   app.handleInput(KEY.enter);
   type("too early");
@@ -299,4 +306,37 @@ test("a message sent while the coach answers stays in the prompt", async () => {
   await until(() => text().includes("Slow answer."), "the reply");
   app.handleInput(KEY.enter);
   await until(() => !plain().includes("› too early"), "the kept message to go");
+});
+
+test("the coach is told the keys the application really binds", async () => {
+  const { app, faux, type, text } = await setup();
+  let instructions = "";
+  faux.setResponses([
+    (context) => {
+      // The instructions travel as the leading system message of the request.
+      instructions = JSON.stringify(context.messages[0]);
+      return fauxAssistantMessage([fauxText("Answered.")]);
+    },
+  ]);
+  app.handleInput(KEY.ctrlG);
+  type("what is alt+1 for?");
+  app.handleInput(KEY.enter);
+  await until(() => text().includes("Answered."), "the coach's reply");
+  for (const line of [
+    "- ctrl+s: Save and push",
+    "- ctrl+g: Switch between the article and the coach",
+    "- alt+1: Apply alternative 1 of the oldest pending suggestion",
+    "- Publish to the live site",
+    "- Translate into the other language",
+  ]) {
+    assert.ok(instructions.includes(line), line);
+  }
+});
+
+test("tab indents the article and leaves the focus where it is", async () => {
+  const { app, type, plain } = await setup();
+  app.handleInput("\x1b[1;5F");
+  app.handleInput("\t");
+  type("indented");
+  assert.ok(plain().includes("      indented"));
 });
